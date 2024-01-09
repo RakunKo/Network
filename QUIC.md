@@ -1,285 +1,405 @@
-# CUBIC: A New TCP-Friendly High-Speed TCP Variant
+# **The QUIC Transport Protocol:
+Design and Internet-Scale Deployment**
 
-### 1. Abstract
+### 1. **ABSTRACT**
 
-CUBIC : a congestion control protocol for TCP (리눅스에서 사용중인 알고리즘)
-
-- 기존 선형적으로(+1씩) 증가하는 함수에서 CUBIC function으로 수정
+- to improve  transport performance for HTTPS
+- to enable rapid deployment and continued evolution of transport mechanisms
     
-    ⇒ 고속, 장거리 네트워크에 대한 확장성의 향상 (기존 TCP는 점점 성능이 나빠졌음)
+    ⇒encrypted, multiplexed, low-latency transport protocol 
     
-    ⇒ cwnd의 size를 RTT에 독립적으로 작용시켜 다른 RTT를 가진 흐름에서도 균등한 대역폭 할당을 달성
+    ⇒현재 구글에서 사용중이다
     
-    ⇒ cwnd의 size를 saturation porin에서 멀면 aggressive, 가깝다면 slowly
+    <img width="402" alt="스크린샷 2024-01-09 오후 8 05 34" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/e62aae8b-ee7a-4692-a767-0470c15ca1fa">
     
 
 ### 2. Introduction
 
-기존 TCP방식은 매우 빠르고 장거리 네트워크 paths에 취약하다(성능이 좋지 않다)
-
-⇒ window size를 RTT당 한번 올리기 때문
-
-Ex) bandwidth = 10Gbps, RTT = 100ms, packets = 1250bytes = 1250*8bits
-
-- bandwidth = 10*10^9 bps, BDP = 10^9=10^9/1250*8 =100000packets
-- linear하게 올린다면 50000(BDP의 절반)까지 가는데 50000RTT⇒5000sec(1.4hr)
-
-BDP = Bandwidth * Delay 
-
-⇒ 대폭폭을 충분히 사용한 상태에서 in flight(sender가 ACK을 받지 못함) 상태인 packet의 총 수 = cwnd size
-
-BIC-TCP의 다음 version인 CUBIC
-
-- CUBIC function으로 오목하고 볼록한 모양을 재배치하여 window adjustment algorithm을 간단화
-- window의 증가는 두 개의 연속적인 congestion event 사이의 real time에만 의존
-    - congestion epoch : the time when TCP undergoes fast recovery.
-    - RTT에 독립적이다
+- QUIC replaces most of the traditional HTTPS stack : HTTP/2, TLS, TCP
+- UDP를 기반으로 한 user-space transport
     
-    ⇒ bottleneck에서 경쟁하여 RTT에 독립적으로 거의 동일한 window size를 가질 수 있다.
+    ⇒ user-space transport는 applications의 일부로 개발이 용이
     
-    ⇒ RTT가 짧을 때는 window 증가 속도가 고정되어 TCP 표준보다 증가 속도가 느릴 수 있다.
+    ⇒UDP를 사용함으로서 QUIC packets이 middlebox를 통과할 수 있다.
     
-- 주요 upgrade
-    - floating point operation의 계산 비용을 줄이기 위해 Newton-Raphson method 사용
-    - removal of window clamping(BIC-TCP에서 도입, target mid-point가 매우 크다면 선형적으로 증가하게 된다)
+    - middlebox를 통해 authenticated and encrypted, preventing modification and limiting ossification of the protocol
+- cryptographic handshake
+    - minimizes handshake latency for most connections by using known server credentials on repeat connections
+    - by removing redundant handshake-overhead at multiple layers in the network stack
+- eliminates head-of-line blocking delays
+    - using a lightweight data-structuring abstraction, stream, which are multiplexed
 
-### 3. CUBIC Congestion Control
+<img width="436" alt="스크린샷 2024-01-09 오후 8 06 26" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/74a3b4a1-4c67-4cba-9a97-88acaae3f906">
 
-**3.1 BIC-TCP**
+### 3. **MOTIVATION: WHY QUIC?**
 
-![스크린샷 2023-12-28 오후 4.59.56.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/19ee6510-f3d3-45f4-aa89-aa8237cffdfe/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_4.59.56.png)
+- reducing web latency에 대한 전례없는 요구
+    - web latency ⇒ 사용자의 경험 개선에 대한 장애물
+    - tail latency ⇒ web platform 확장에 대한 장애물
+- rapidly shifting from insecure to secure traffic, which adds delays.
 
-- unique window growth function
-    - packet loss가 일어나면, BIC-TCP는 a multiplicative factor β에 의해 window를 줄인다.
-    - 축소 직전 window size = Wmax
-    - 축소 직후 window size = Wmin
-    - 그후 Wmax, Wmin의 중간 지점으로 점프(additive increase)
-        - mid-point가 fixed-constant Smax보다 크다면 Smax만큼 증가시킨다
-        - Wmin은 그 Point에서 packet loss가 일어나지 않았다면 그 window로 설정한다.
-        - 이 과정은 window growth가 Smax보다 작을 때 까지 계속한다
-    - binary search 수행 (Wmax까지 진행)
-- window size가 이전의 Wmax에 도달! ⇒ max probing
-    - 전에 사용한 방법을 대칭적으로 적용한다
-    - 새로운 Wmax를 찾지 못한다면 더 멀리 떨어져 있다고 가정
+**Protocol Entrenchment:**
+
+- middleboxes have accidentally become key control points in the internet’s architecture
+    - firewall, Network Address Translators(NATs)…
+    
+    ⇒ middlebox에서 inspect and modify하게 되었다.
+    
+
+**Implementation Entrenchment:**
+
+- there is a need to be able to deploy changes to clients rapidly
+    - continues to evolve
+    - attacks on various parts of the infra
+    - remain a threat
+- TCP는 **OS**에 탑재되어 있다
+    - 그 말은 TCP의 수정은 OS의 upgrade가 요구되어지게 된다.
+    
+
+**Handshake Delay:**
+
+- the **cost**s of layering have become increasingly visible with increasing latency demands on the HTTPS stack.
+- TCP connection은 보통 적어도 한번의 round-trip delay가 발생
+- TLS는 2번의 round-trip delay가 발생한다.
+    
+    ⇒unnecessary handshake round trip은 가장 큰 영향을 주게 된다.
+    
+
+**Head-of-line Blocking Delay:**
+
+- to reduce latency and overhead costs of using multiple TCP connections
+    - HTTP/1.1 : limiting the number of connections
+    - HTTP/2 : multiplexes multiple object and use a single TCP connection to any server
+    
+    ⇒ 그러나 손실된 TCP segment에 대한 재전송과 통신 프레임을 제어하는 것을 방지
+    
+- QUIC은 UDP를 사용하여 재전송을 하지 않고, 네트워크 제공자에 대한 의존성을 줄인다.(배포권이 있다)
+    - 전에는 배포를 하기 전에 web server, client, transport stack, middlebox 수정이 필요했다.
+
+### **3. QUIC DESIGN AND IMPLEMENTATION**
+
+- several goals
+    - deployability, security, and reduction in handshake and head-of-line blocking delays.
+    - combine its cryptographic and transport handshakes to minimize setup RTTs.
+    - mulitplexes multiple requests/responses over a single connection by providing each with **its own stream.**
         
-        binary search⇒addtive increase로 전환
+        ⇒어느 response도 다른 response를 block 할 수 없다.
         
-
-**3.2 CUBIC window growth function**
-
-BIC-TCP 단점 
-
-- short RTT, low speed networks에서 growth function의 증가폭이 너무 급격하다
-- several different phases(binary search, additive increase, max probing) ⇒ 구현의 어려움
-
-CUBIC
-
-- cubic function 사용
-- window growth를 위해 the concave and convex profiles(오목, 볼록)을 둘 다 사용한다.
-
-- loss event가 일어난 곳에서 Wmax를 등록하고 multiplicative decrease를 window decrease constant β에 의거하여 사용한다.
-- fast recovery를 통해 congestion avoidance에 진입하게 되면 concave profile이 적용된 cubic function이 사용된다. Wmax가 될 때까지 지속한다.
-- Wmax에 도달하면 cubic function은 convex profile로 전환된다.
-    - concave, convex profile 형태는 protocol과 network의 안정성을 향상(높은 네트워크 효율성을 유지하면서)
-    - Wmax 근처에선 느린 속도로 증가하기 때문에..가능하다.
-    - convex growth function은 window increment가 크기 때문에 packet loss가 크게 발생할 수도 있다.
-    
-
-window growth function of CUBIC : $W(t) = C(t-K)^3 + Wmax$
-
-C : CUBIC parameter
-
-t : the elapsed time from the last window reduction (마지막 윈도우 축소에서 경과된 시간)
-
-K is the time period that the above function takes to increase W to Wmax when there is no further loss event,  $K = \sqrt[3]{\frac{W_{\text{max}}B}{C}}$
-
-- congestion avoidance 중 ACK을 받는다면, CUBIC은 Eq를 이용해 다음 RTT 기간동안의 window growth rate 를 계산한다.
-
-$W(T+RTT)$ congestion window 후보 target으로 설정
-
-- cwnd size에 따른 3가지 모드
-    - TCP mode : loss event가 발생하고 t time이 지나 도달할 window size보다 cwnd가 작은 경우
-    - concave region : cwnd가 Wmax보다 작은 경우
-    - convex region : cwnd가 Wmax보다 큰 경우
-    
-
-**3.3 TCP-friendly regions**
-
-- congestion avoidance 상태에서 ACK을 받는 다면, 프로토콜이 TCP region 인지 아닌지 확인해야 한다.
-    - average window size of AIMD = $\frac{1}{RTT}\sqrt{\frac{\alpha}{2}\frac{2-\beta}{\beta}\frac{1}{p}}$
-    - window size of TCP in terms of the elapsed time t
+        ⇒middleboxes에 의한 변조를 막기 위해 encrypts and authenticates
         
-         = $Wtcp(t)=Wmax(1-\beta)+3*\frac{\beta}{2-\beta}*\frac{t}{RTT}$
-        
-        cwnd가 Wtcp(t)보다 작다면, 프로토콜은 TCP mode 인 것이다. cwnd를 Wtcp(t)로 설정
-        
-        ⇒ cubic_tcp_friendliness()
-        
+        - improve loss recovery by using **unique packet numbers** to avoid retransmission ambiguity and by using **explicit signaling in ACKs** for accurate RTT measurements.
+            
+            ⇒5-tuple(IP/Port) 대신 connection ID를 통한 ip address migrate
+            
+            ⇒slow receiver’s buffer의 데이터 양을 제한하는 flow control 제공
+            
+            ⇒ensure that a single stream does not consume all the receiver’s buffer by using per-stream flow control limits.
+            
 
-**3.4 Concave region**
+**3.1 Connection Establishment** 
 
-- congestion avoidance 상태에서 ACK을 받았고, TCP mode가 아니고 cwnd가 Wmax보다 작다면 concave region이다.
-- 이 상태에선 cwnd가 $\frac{W(t+RTT)-cwnd}{cwnd}$ 씩 증가한다.
+QUIC relies on a combined cryptographic and transport hand-shake for setting up a secure transport connection
 
-**3.5 Convex region**
-
-- 만약 window size of CUBIC이 Wmax보다 크다면 concave region을 지나 convex region
-- cwnd가 Wmax보다 크다는 것은 더 많이 사용 가능한 대역폭을 의미한다. (비동기적이라 대역폭의 변동이 항상 존재한다)
-- maximum probing phase (새로운 Wmax를 찾는 작업)
-- 이 상태에선 cwnd가 $\frac{W(t+RTT)-cwnd}{cwnd}$ 씩 증가한다.
-
-**3.6 Multiplicative decrease**
-
-- packet loss가 일어나면 CUBIC은 cwnd를 factor B를 이용하여 감소시킨다.
-- B를 0.5 이하로 설정하면 수렴 속도가 느리다.
-
-**3.7 Fast Convergence**
-
-- 기존 flow에 의해 대역폭의 release를 증가시키기 위해서 사용
-- loss event가 발생하면, cwnd를 줄이기전에, protocol은 Wmax를 기억한다. (Wlast_max)
-- 현재의 Wmax값이 Wlast_max값보다 작다면 대역폭의 변화로 saturation point가 감소하고 있음을 알 수 있다.
-- Wmax를 더 줄임으로써 flow가 더 많은 대역폭을 release할 수 있게 한다.
-- 감소된 Wmax는 더 빨리 안정 상태⇒ 새로운 flow의 cwnd를 증가시키는 시간이 길어진다
-- 그 시간동안 새로운 flow가 window size를 잡을 수 있다.
-
-### 4. CUBIC in Linux Kernel
-
- **4.1 Evolution of CUBIC in Linux**
-
-- performance와 implementation efficiency improvement에 초점
-    - cubic root calculation (Newton-Rhaphson method)
-- algorithmic changes to enhance its scalability, fairness and convergence speed
-
-**4.2 Pluggable Congestion Module**
-
-- Stephen Hemminger가 제안한 new architecture “pluggable congestion module” in Linux 2.6.13
-    - dynamically loadable and allows switching between different congestion control algorithm modules without recompilation
-    - new congestion control algorithm ⇒ define cong_avoid and ssthresh (나머진 옵션)
-
-### 5. Discussion
-
-- the number of packets between two successive loss event is always $\frac{1}{p}$
+- handshake 성공시
     
-    ⇒ concave window profile
+    → client caches information about the ***origin***
     
-    ⇒Average window size of CUBIC  $E\{W_{cubic}\} = \sqrt[4]{\frac{C(4-\beta)}{4\beta}(\frac{RTT}{p})^3}$
+- 후속 connection to the same origin
     
-- To ensure fairness, C = 0.4, $\beta$ = 0.2
-    - to be large enough to encompass most of the environments where Standard TCP performs well
-    - while preserving the scalability of the window growth function
+    → client can establish an encrypted connection with no additional round trips
     
-    ⇒ $E\{W_{cubic}\} = 1.17\sqrt[4]{(\frac{RTT}{p})^3}$ used to argue the fairness of CUBIC
+    → data can be sent immediately following the client handshake packet
+    
+- a dedicated reliable stream
+    
+    → summarizes the mechanics of QUIC’s cryptographic handshake
     
 
-**5.1 Fairness to standard TCP**
+**Initial handshake:**
 
-- Standard TCP performs well in the following two types of networks
-    - networks with a small bandwidth-delay product(BDP)
-    - networks with a short RTT, but not necessarily a small BDP
+- 클라이언트와 서버 모두 정보가 없다
+1. client sends an ***inchoate client hello***(CHLO) message
+2. server sends a reject(REJ) message
+    1. **a server config** that includes the server’s long-term Diffie-Hellman public value
+    2. **certificate** chain authenticating the server
+    3. a **signature** of the server config (using the private key)
+    4. ***a source-address token (an authenticated-encryption block)***
+3. client sends a source-address token back to the server in later handshakes
     
-    ⇒ CUBIC은 두 경우에서 매우 비슷하게 행동하도록 설계되어 있다.
+    →demonstrating ownership of its IP address
     
-    ![스크린샷 2023-12-28 오후 9.58.13.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/7f7a08e9-32ad-48a9-8098-ef9753b91107/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_9.58.13.png)
-    
-    ![스크린샷 2023-12-28 오후 9.58.38.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/2ac041f7-5b44-4c0a-8435-83de99ef977f/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_9.58.38.png)
-    
-    - RTT = 10ms, p = $10^{-6}$
-    - average window size = 1200 packets
-    - packet size = 1500byte
-        - average rate of 1.44Gbps
-        - CUBIC achieves exactly the same rate as Standard TCP
-    
+4. client sends a complete CHLO, containg the client’s ephemeral Diffe-Hellman public value.
 
-**5.2 CUBIC in action**
+**Final (and repeat) handshake:**
 
-![스크린샷 2023-12-28 오후 9.50.53.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/e33fd89b-f49f-4af0-ad8e-1123ef2cae15/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_9.50.53.png)
+All keys for a connection are established using Diffie-Hellman.
 
-![스크린샷 2023-12-28 오후 9.51.23.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/5c84ebdd-7c52-4c87-9039-a9362813c715/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_9.51.23.png)
+→after sending a complete CHLO, the client is in possession of initial keys for the connection
 
-- bottleneck capacity = 400Mbps, RTT = 240ms
-    
-    ⇒ two flows converges to a fair share within 200 second
-    
+결국 이 시점부터 client는 서버에게 자유롭게 데이터를 보낼 수 있다.
 
-![스크린샷 2023-12-28 오후 10.00.57.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/c3f8979a-1877-4b6b-89c9-e33879d3370c/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.00.57.png)
+0 RTT를 달성하기 위해 client는 서버의 응답을 기다리기 전에 initial key로 암호화된 데이터 전송을 시작해야함
 
-![스크린샷 2023-12-28 오후 10.01.09.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/e45a8e69-1528-4557-b3c0-0d60ca0ead3c/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.01.09.png)
-
-- over short-RTT network path (8ms)
+- handshake is successful, server returns a server hello(SHLO) message.
     
-    ⇒ TCP-SACK use the full bandwidth of the path
+    → encrypted using the initial keys
     
-    ⇒ CUBIC operates in the TCP-friendly mode
+    → contains the server’s ephemeral Diffie-Hellman public value
     
-    ⇒ shares the bandwidth fair with the other TCP-SACK flow by maintaining the congestion window of CUBIC similar with that of TCP-SACK
+    → server switches to sending packets encrypted with the forward-secure keys.
     
-- under the long-RTT(82ms)
+- SHLO를 client가 받으면
     
-    ⇒ Standard TCP has the under-utilization problem
-    
-    ⇒ CUBIC use cubic function to be scalable for this environment.
+    → the client switches to sending packets encrypted with the forward-secure keys.
     
 
-![스크린샷 2023-12-28 오후 10.09.36.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/bfc467df-e0c0-4cce-812c-498d3e707fe9/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.09.36.png)
+<img width="438" alt="스크린샷 2024-01-09 오후 8 06 53" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/8a581997-e18d-403d-9003-988f60ae6fef">
 
-- bandwidth = 400Mbps
-- RTT = 40ms
-- 100% BDP of flow
-    - not cause much disturbance
+QUIC’s cryptography provides two levels of secrecy:
+
+- initial client data is encrypted using **initial keys**
     
-    ⇒ total network utilization = 95%
+    → provide protection  analogous to TLS session resumption with session ticket
     
-    ⇒ CUBIC takes 72%
+- subsequent client data and all server data are encrypted using forward-secure keys.
+- The client caches the server config and source-address token
     
-    ⇒ TCP-SACK takes 23%
+    → 이후 전송에서 서버의 응답을 기다리지 않고 전송이 가능하다.
+    
+- source address token, server config 가 만료되거나 인증이 바뀐다면…?
+    - server는 REJ message를 client에게 전송한다.
+
+**Version Negotiation:**
+
+QUIC clients and servers perform version negotiation during connection establishment to avoid unnecessary delays.
+
+1. client proposes a version to use for the connection in the first packet of the connection and encode the rest of the handshake using the proposed version
+2. server does not speak the client-chosen version
+    
+    → forces version negotiation by sending back a version negotiation packet to the client carrying all of the server’s supported versions, causing a round trip of delay before connection establishment.
+    
+3. 만약 speak 한다면 round-trip latency를 제거할 수 있다.
+
+downgrade attacks를 막기위해, version은 최종 키를 생성하는 동안 client와 server의 key-derivation function에 입력된다.
+
+**3.2 Stream multiplexing**
+
+Applications commonly multiplex units of data within TCP’s single- bytestream abstraction.
+
+- QUIC supports multiple streams within a connection
+    
+    → avoid head-of-line blocking due to TCP’s sequential delivery
+    
+    → lost UDP packet only impacts those streams whose data was carried in that packet
+    
+- a lightweight abstraction stream
+    
+    → provide a reliable bidirectional bytestream
+    
+    →identified by stream IDs (avoid collisions, odd IDs→client, even IDs → server)
+    
+- stream 생성은 첫번째 바이트를 보낼때 이루어 진다.
+    
+    → stream closing은 스트림 frame에 “FIN”을 설정한다.
+    
+- client와 server 둘중 어디든 더 이상 연결이 필요가 없다면..?
+    
+    → QUIC **연결을 끊지 않고** 취소할 수 있다.
+    
+    <img width="446" alt="스크린샷 2024-01-09 오후 8 07 22" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/501229ad-1d3a-4549-8112-fdd797890a6f">
+    
+- A QUIC packet is composed of a common header followed by one or more *frames*
+- QUIC stream multiplexing 은 encapsulating stream data in one or more stream frames
+    
+    → single QUIC packet can carry stream frames form multiple stream
     
 
-### 6. Experimental Evaluation
+**3.3 Authentication and Encryption**
 
-**6.1 Experimental setup** 
+- Flag, Connection Id, Version Number, Diversification Nonce, Packet Number
+    
+    → QUIC packet header outside : packet routing, decrypting에 사용
+    
+    - Flag : encode the presence of the Connection ID field and length of the Packet Number field, and must be visible to read subsequent field.
+    - Connection ID : routing, identification purpose (load balancer에 사용)
+    - Version number, diversification nonce : present in early packets
+        - server generates the diversification nonce and sends it to the client in the SHLO packet to add entropy into key generation
+        - server and client use the packet number as a per-packet nonce, which is necessary to authenticate and decrypt packets.
+    - Packet Number
+        - placed outside of encryption cover to support decryption of packets
+- Version Negotiation packet 같은 암호화되지 않은 패킷
+    - included in the derivation of the final connection keys
+- Reset packets are sent by a server that does not have state for the connection, which may happen due to a routing change or due to a server restart.
 
-![스크린샷 2023-12-28 오후 10.18.23.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/3334e8b8-1520-4fda-aa40-2a8c4363a1a2/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.18.23.png)
+결국 서버는 connection’s keys를 가지지 않고, reset packets은 비암호화, 비인증된 상태로 보내진다.
 
-- each end points consists of a set of Dell Linux servers dedicated to high-speed TCP variant flows and background traffic.
-- Background traffic is generated by us- ing a modification of a web-traffic generator, called Surge and Iperf
-- the maximum bandwidth of the bottleneck router is set to 400Mbps. The bottleneck buffer size is set to 100% BDP
+**3.4 Loss Recovery**
 
-**6.2 Intra-Protocol Fairness**
+TCP seq num은 reliability 와 represent the order를 가능하게 한다.
 
-![스크린샷 2023-12-28 오후 10.25.15.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/0e420b5d-e6a9-4ade-a164-d3bee70cc810/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.25.15.png)
+→ retransmission ambiguity 문제가 발생한다. (동일한 seq num의 패킷을 보내기 때문에)
 
-![스크린샷 2023-12-28 오후 10.25.31.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/f95b33e3-1826-45a3-a387-bceb91b69783/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.25.31.png)
+→ 일반 전송인지 재전송인지 결정할 수 없다.
 
-- RTT vary between 16ms and 324ms
+→ 재전송된 패킷의 loss는 보통 값비싼 timeout으로만 재전송을 감지하게 된다.
 
-**6.3 Inter-RTT Fairness**
+QUIC에서는 **new packet number**와 재전송 데이터를 담고 있다.
 
-![스크린샷 2023-12-28 오후 10.28.43.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/3d96f4da-cad2-49f8-b6b4-679d8cb358a4/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.28.43.png)
+→ retransmission ambiguity 해결 (원래 전송인지 재전송인지 구별할 매커니즘 필요하지 않음)
 
-![스크린샷 2023-12-28 오후 10.28.53.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/a19766df-9524-4452-ae77-6c8410a28038/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.28.53.png)
+→ stream offsets in stream frames : used for delivery ordering
 
-- one flow has a fixed RTT of 162ms and the other flow varies its RTT from 16ms to 162ms
+→ represents and explicit time-ordering (simpler and more accurate loss detection)
 
-**6.4 Impact on standard TCP traffic**
+QUIC acknowledgments explicitly encode the delay between the receipt of a packet and its acknowledgment being sent.
 
-- Being fair to Standard TCP is critical to the safety of the protocol.
+→ packet number의 monotonically-increasing
 
-![스크린샷 2023-12-28 오후 10.38.59.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/a15b44ae-1e05-4549-a955-23b02a3778ac/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.38.59.png)
+→ 정확한 RTT estimation을 가능하게 한다. (loss detection에 도움)
 
-![스크린샷 2023-12-28 오후 10.39.09.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/d08d311f-9ec4-42c5-ae79-cab116c2ad73/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.39.09.png)
+→ delay-sensing congestion controllers에게도 도움을 준다.
 
-![스크린샷 2023-12-28 오후 10.39.18.png](https://prod-files-secure.s3.us-west-2.amazonaws.com/e57305b3-d2ae-421a-93c5-d741178000ba/1116f9d2-607f-4764-8aa6-b585de17e939/%E1%84%89%E1%85%B3%E1%84%8F%E1%85%B3%E1%84%85%E1%85%B5%E1%86%AB%E1%84%89%E1%85%A3%E1%86%BA_2023-12-28_%E1%84%8B%E1%85%A9%E1%84%92%E1%85%AE_10.39.18.png)
+→ 최대 256 ACK block을 지원하여 재정렬 및 손실에 대한 복원력이 더 뛰어나다.
 
-- how much these high-speed protocols steal the bandwidth from competing TCP-SACK flows.
-    - (a) TCP-SACK은 slow window growth function 때문에 100%효율을 내지 못한다.
-    - (a) 다른 방식들은 growth function의 차이로 fully utilize
-    - (a) CUBIC은 다른 알고리즘보다 TCP-SACK에게 더 많은 공간을 제공한다.
-    - (b)TCP-SACK은 fully utilize
-    - (b) CUBIC은 다른 프로토콜에 비해 friendly(자원을 공정하게 나눈다)
-    - (c)RTT가 적당하면 모두 reasonable friendliness
+더 간단하고 효과적인 매커니즘을 가지고 있다.
 
-### 7. Conclusion
+**3.5 Flow Control**
 
-- fast and long distance networks에서 좋은 성능
-- BIC-TCP window control을 간단화하고 TCP-friendliness와 RTT-fairness를 향상시켰다.
-- window growth가 RRT와 독립적으로 수행
+QUIC : connection-level flow control, stream-level flow control
+
+→ limit the aggregate buffer that a sender can consume at the receiver across all stream
+
+→ limit the buffer that a sender can consume on any given stream
+
+credit-based flow-control :
+
+→ QUIC receiver advertises the absolute byte offset within each stream up to which the receiver is willing to receive data
+
+→ 특정 스트림으로 보내고, 받고, 전달되면 점진적으로 window update frames를 보내 더 많은 데이터를 스트림을 통해 보내도록 허락한다.
+
+**3.6 Congestion Control**
+
+특정 congestion control algorithm에 의존하지 않으며, pluggable interface를 가지고 있는다.
+
+→ CUBIC 사용
+
+**3.7 NAT Rebinding and Connection Migration**
+
+QUIC connection은 64-bit Connection ID로 구별된다.
+
+→ client의 IP, port의 변경에도 연결이 유지되도록 한다.
+
+→ NAT timeout, rebinding, client changing network connectivity to a new IP address.
+
+→ NAT rebinding 문제를 쉽게 제거한다.
+
+→ client-initiated connection migration is a work in progress with limited deployment at this point.
+
+**3.8 QUIC Discovery for HTTPS**
+
+client does not know a priori whether a given server speaks QUIC.
+
+1. client makes an HTTP request, it sends the request over TLS/TCP
+2. server advertis QUIC support by including and “Alt-Svc” header in their HTTP responses.
+3. this header tells a client that connections to the origin may be attempted using QUIC
+4. client can now attempt to use QUIC
+- 후속 HTTP request는 TLS/TCP와 QUIC과 경쟁하지만 QUIC을 더 선호하게 된다. (딜레이가 짧다)
+- 먼저 연결에 성공한 것이 요청에 사용된다.
+
+### 5**. INTERNET-SCALE DEPLOYMENT**
+
+**5.1 The Road to Deployment**
+
+- QUIC support was added to Chrome in June 2013.
+- 2014, turned it on via Chrome’s experimentation framework for a tiny fraction of users
+- 2017, turned it on for almost all users of Chrome and the Android Youtube app
+
+**Unencrypted data in 0-RTT requests:**
+
+→ could result in 0 RTT requests being sent unencrypted in an exceedingly rare corner case.
+
+→ 잠시 중단 후에 다시 QUIC traffic이 재건되었다.
+
+**Increasing QUIC on mobile:**
+
+- Youtube에서 September 2016부터 QUIC을 사용하기 시작했다.
+
+**5.2 Monitoring Metrics: Search Latency**
+
+search latency : the delay between when a user enters a search term into the client and when all the search-result content is generated and delivered to the client
+
+<img width="444" alt="스크린샷 2024-01-09 오후 4 54 43" src="https://github.com/RakunKo/Network/assets/145656942/d7db13d1-8ec1-4ada-857a-e7aebd09c1c5">
+
+- changes in infrastructure and to a client configuration bug (1)
+- the client configuration bug had been fixed, and search latency improved (2)
+- the deployment of UDP-proxying at their ***REL***s (3)
+    - restricted edge locations(RELs) and UDP *proxying*
+    - search latency increased form about 4% to over 7%
+
+### **6. QUIC PERFORMANCE**
+
+<img width="446" alt="스크린샷 2024-01-09 오후 5 13 14" src="https://github.com/RakunKo/Network/assets/145656942/e142df90-6865-49da-9ecb-9414a2684a9a">
+
+**6.2 Transport and Application Metrics**
+
+*Handshake latency :* the amount of time taken to establish a secure transport connection
+
+→TLS/TCP 에서는 TCP와 TLS handshake의 시간이 모두 포함된다.
+
+<img width="647" alt="스크린샷 2024-01-09 오후 5 31 09" src="https://github.com/RakunKo/Network/assets/145656942/81675e8e-2850-4dec-a52a-2eaf07bf577d">
+
+- QUIC 0-RTT handshake : latency is measured as 0ms
+    
+    → fixed latency cost of 0-RTT handshake로 인해 RTT에 대해 매우 둔감하다.
+    
+    → 증가는 not success fully connect in 0-RTT로 인한 증가
+    
+    → higher resilience to loss in general and lower latency for short connection(적은 RTT)
+    
+- TCP/TLS 에서는 RTT가 증가할 수록 handshake latency가 선형적으로 증가하게 된다.
+
+1. networking remains just one constituent of end-to-end app measures.
+    1. handshake latency는 search latency와 video latency에 20% 미만을 차지한다.
+2. the sensitivity of application metrics to networking changes depends on the maturity of the application.
+    1. highly optimized and mature Web applications → improving end-to-end metrics in them is difficult
+
+**6.3 Search Latency**
+
+search latency : the delay between when a user enters a search term and when all the search-result content is generated and delivered to the client by Google Search
+
+<img width="446" alt="스크린샷 2024-01-09 오후 5 57 17" src="https://github.com/RakunKo/Network/assets/145656942/953040a5-20d3-4137-915a-c6a3ed01ff2e">
+
+- 대부분의 handshake improvements는 0-RTT handshake에서 비롯된다.
+    
+    → 데스크톱의 QUIC 연결 중 약 88%는 0-RTT handshake (TLS/TCP 보다 2-RTT를 절약)
+    
+    → 나머지 연결들도 1-RTT의 이점을 얻게 된다.
+    
+- QUIC’s improved loss recovery may also contribute to Search Latency improvement at higher RTT.
+- moblie은 desktop보다 QUIC connection 0-RTT handshake가 68% 달성되어 이점이 더 낮다.
+
+successful 0-RTT handshake 
+
+- a valid server config and a valid source address token in a client’s handshake message
+
+1. mobile users switch networks, their IP address changes, which invalidates the source-address token cached at the client.
+2. different server configurations and kets are served and used across different data centers.
+    
+    → client may hit a different data center where the servers have a different server config than that cached at the client
+    
+
+⇒ contributes to about half of the reduction in successful 0-RTT handshakes
+
+**6.4 Video Latency**
+
+video latency : the time between when a user hits “play” on a video to when the video starts playing
+
+→to ensure smooth playbacks, video players typically buffer a couple seconds of video
+
+- 평균 85%의 QUIC connections for video playback on desktop receive the benefit of a 0-RTT handshake, 나머지는 1-RTT의 benefit
+- QUIC loss recovery improvements may help Video Latency as client RTT increases.
+- 모바일 기기의 이점이 데스크탑 보다 작다.
+    
+    → 평균적으로 약 65%의 0-RTT handshake가 일어난다.
+    
+    → 앱은 사용자가 비디오를 탐색하고 검색하는 동안 백그라운드에서 비디어 서버에 대한 연결을 설정하여 handshake 비용을 숨긴다. (오히려 benefit을 줄인다)

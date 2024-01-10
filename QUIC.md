@@ -403,3 +403,123 @@ video latency : the time between when a user hits “play” on a video to when 
     → 평균적으로 약 65%의 0-RTT handshake가 일어난다.
     
     → 앱은 사용자가 비디오를 탐색하고 검색하는 동안 백그라운드에서 비디어 서버에 대한 연결을 설정하여 handshake 비용을 숨긴다. (오히려 benefit을 줄인다)
+
+**6.5 Video Rebuffer Rate**
+
+To ensure smooth playback over variable network connections, video players typically maintain a small playback buffer of video data.
+
+- 만약 꽉찬다면..? → video는 player가 data를 rebuffer할 수 있을 때까지 기다린다.
+- video rebuffer rate, rebuffer rate → 데이터를 rebuffer하기 위해 재생중에 중지되는 시간의 비율
+    
+    →(rebuffer Time)/(Rebuffer Time + video play Time)
+    
+- handshake latency와 무관하다.
+- loss-recovery latency에 영향을 받는다 → missing data can stall video playback.
+- connection’s overall throughput에 영향도 받는다.
+
+**Loss-Recovery Latency:**
+
+video player에선 2개의 TCP connection을 사용한다.
+
+→ 2개의 TCP connection을 사용하면 loss detection이 느려진다 (다른 connection은 loss를 알 수 없다)
+
+QUIC의 loss-recovery improvements는 rebuffer rate가 더 천천히 증가하게 한다
+
+**Connection Throughput:**
+
+Connection throughput is dictated by a connection’s *congestion window*
+
+ → estimated by the sender’s congestion controller, and by its receive window(computed by the receiver’s flow controller)
+
+- The default initial connection-level flow control limit advertised by a QUIC client is 15MB
+    
+    →which is large enough to avoid any bottlenecks due to flow control
+    
+- rebuffer rate can be decreased by reducing video quality
+    - QUIC palybacks show improved video quality as well as a decrease in rebuffers
+- rebuffer가 일어나지 않으면 QUIC과 TCP는 같다.
+- QUIC’s benefits are higher whenever congestion, loss, and RTTs are higher.
+
+**6.6 Performance By Region**
+
+differences in access-network quality and distance form Google servers result in RTT and retransmission rate variations for different geographical regions.
+
+- 낮은 평균 RTT와 network loss를 가진 한국은 별 차이가 없다.
+- india 같이 높은 평균 RTT와 network loss를 가진 국가에서는 큰 이익을 얻을 수 있다.
+    
+    → higher average RTT and higher network loss에서 얻을 수 있는 이익이 더 크다.
+    
+
+**6.7 Server CPU Utilization**
+
+QUIC’s server CPU-utilization was about 3.5 times higher than TLS/TCP
+
+- cryptography
+    - to reduce, employed a hand-optimized version of the ChaCha20 cipher favored by mobile client
+- sending and receiving of UDP packets
+    - to reduce, used **asynchronous** packet reception form the kernel via a memory-mapped app ring buffer (Linux’s packet_rx_ring)
+- maintaining internal QUIC state
+    - to reduce, rewrote critical paths and data-structures to be more cache-efficient
+- 이러한 최적화로 CPU 웹 트레픽을 제공하는 코스트를 감소시켰다. (TLS/TCP에 약 2배)
+
+**6.8 Performance Limitations**
+
+QUIC’s performance can be limited in certain cases.
+
+- **Pre-warmed connections:**
+    - when app hide handshake latency by performing handshakes proactively, these app receive no measurable benefit from QUIC’s 0-RTT handshake.
+- **High bandwidth, low-delay, low-loss networks:**
+    - plentiful bandwidth, low delay, low loss rate → little gain and occasionally negative performance impact.
+    - 오히려 TCP보다 성능이 나빠질 수도 있다.
+- **Mobile devices:**
+    - 모바일 사용자가 얻는 이점은 데스크탑 사용자보다 낮다.
+    - CPU의 성능차이, 콘텐츠 제한시 전송 최적화의 영향이 낮아짐
+
+### **7. EXPERIMENTS AND EXPERIENCES**
+
+**7.1 Packet Size Considerations**
+
+- <img width="664" alt="스크린샷 2024-01-10 오후 1 29 27" src="https://github.com/RakunKo/Network/assets/145656942/a1dd7bf5-b534-4988-aa11-bad061395c36">
+- 1450byte UDP payload size부터 급격하게 unreachability가 증가한다.
+    - UDP 와 IP header를 더하면 1500byte인 MTU를 넘어서기 때문
+- chose **1350bytes** as the default payload size for QUIC
+
+**7.2 UDP Blockage and Throttling**
+
+- successfully used for 95.3% of video clients attempting to use QUIC.
+- 4.4% of clients are unable to use QUIC
+    - meaning that QUIC or UDP is blocked or the path’s MTU is too small.
+    - in corporate networks, behind enterprise firewalls
+- 0.3% of users are in networks that seem to rate limit QUIC and/or UDP traffic
+
+**7.3 Forward Error Correction(FEC)**
+
+- uses redundancy in the sent data stream to allow a receiver to recover lost packets without an explicit retransmission
+    - XOR-based FEC : low computational overhead, simple to implement, avoids latency associated with schemes that require multiple packets to arrive before and can be processed
+- while retransmission rates decreased measurably, FEC had statistically insignificant impact on Search Latency and increased both Video Latency and Video Rebuffer Rate for video playbacks.
+    - <img width="676" alt="스크린샷 2024-01-10 오후 1 49 31" src="https://github.com/RakunKo/Network/assets/145656942/d58745b2-4863-4e72-b3aa-09418d48261c">
+    - sending additional FEC packets simply adds to the bandwidth pressure.
+    - he number of packets lost during RTT-long loss epochs in QUIC to see if and how FEC might help
+        - 이점이 30% 미만으로 제한된다.
+- 결국 QUIC에서 XOR-based FEC 퇴출
+
+**7.4 User-space Development**
+
+- not as memory-constrained as the kernel
+- not limited by the kernel API
+- can freely interact with other systems in the server infra
+    - extensive logging and integration with a rich server logging infrastructure
+    - logging을 통해 cubic의 정지 버그를 발견
+        - 버그를 수정해 30% 재전송률 감소, CPU utilization 17% 향상, TCP 재전송률 20% 감소
+- Due to these safeguards and monitoring capabilities, able to iterate rapidly on deployment of QUIC modifications.
+- <img width="659" alt="스크린샷 2024-01-10 오후 1 57 46" src="https://github.com/RakunKo/Network/assets/145656942/35efc94b-895d-4e7c-84bb-e9e96035d4c8">
+- 실제로 점점 빠르게 QUIC의 수정에 대한 배포가 이루어지고 있다.
+
+**7.5 Experiences with Middleboxes**
+
+QUIC encrypts most of its packet header
+
+→ a few fields are left unencrypted, to allow a receiver to look up local connection state and decrypt incoming packet
+
+- 때로는 1-bit의 변화만으로 다양한 Middlebox에서 문제가 발생할 수 있다.
+- encryption은 middlebox에서 사용되면 안되는 비트가 사용되지 않도록 보장하는 유일한 수단.

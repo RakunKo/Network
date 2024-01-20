@@ -1,3 +1,7 @@
+# 제목 없음
+
+생성일: 2024년 1월 12일 오후 12:11
+
 ## CONVERGE: QoE-driven Multipath Video Conferencing over WebRTC
 
 ### ABSTRACT
@@ -25,7 +29,7 @@ bandwidth-intensive applications는 최근 무선 네트워크에선 문제이�
 
 - 더 많은 용량을 가진 차세대 네트워크이 제공되도, 화상회의는 높은 latency와 frame drop을 포함한 아직 낮은 성능을 보여준다.
 
-<img width="702" alt="스크린샷 2024-01-19 오후 4 48 06" src="https://github.com/RakunKo/Network/assets/145656942/d68fc0c3-83ed-41e2-bbb6-edf1a33b7f38">
+![스크린샷 2024-01-20 오후 3.06.15.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.06.15.png)
 
 - variations in frames per second(FPS) and per-frame end-to-to latency(E2E)는 call안에서 방해의 원인이 되고, 낮은 QoE를 제공하는 원인이 된다.
 - network가 최소 요구 bandwidth를 제공하지 못할때, 다른 network가 보상할 수도 있다.
@@ -66,3 +70,86 @@ Converge를 Real-time Transport Protocol(RTP)m Real-time Transport Control Proto
 - 개발 비용을 줄이기 위해 WebRTC 상단에 탑재
 - multipath와 여러개의 카메라를 지원한다
 - 두 end point중 하나가 다중경로를 지원하지 않는 경우 표준 WebRTC 프로토콜로 원활하게 돌아가므로 기존의 많은 WebRTC 기반 화상 회의 애플리케이션과 역호환이 보장된다.
+
+### 2. BACKGROUND
+
+**2.1  Overview of WebRTC**
+
+- WebRTC has three components : sender, network controller, receiver
+    
+    ![스크린샷 2024-01-20 오후 3.06.42.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.06.42.png)
+    
+- sender : takes the inferred rate from the network controller and encodes video frames captured by the camera at that rate
+    - 인코딩된 비디오 frame은 RTP로 패킷화되어 전송되어진다.
+- receiver : receives the RTP packets and utilizes two buffers to generate video frames.
+    - RTCP 패킷을 사용하여 sender에게 loss와 delay reports를 전송한다.
+- network controller : analyzes these reports and adjust the encoding rate for the sender
+
+**Network controller**
+
+- WebRTP는 Google Congestion Control(GCC)를 사용한다.
+    - 이 알고리즘은 이용 가능한 네트워크 경로를 동적으로 추정한다.
+- sender의 GCC는 loss와 delay reports를 사용하여 두개의 rate를 계산한다.
+    - 두가지 rate중 낮은 rate를 사용해서 인코딩하여 congestion을 최소화한다.
+    - GCC는 rate를 receiver로 부터 feedback이 올때 계산하게 된다 → feedback 주기는 bandwidth와 관련이 있다.
+
+**Encoding and decoding pipeline**
+
+- encoder : the raw image frames→video frames (network controll에서 정해진 rate로 인코딩)
+    - Keyframes(I-frame) : 완전한 frame의 정보를 담고 있다.
+    - delta frame : key frames의 변화를 포착한 정보를 담고 있다.
+    - 두 frame은 RTP packet으로 packet화되어 network를 통해 전송된다.
+        - RTP packet은 media data와 control information(decoding info)으로 나뉜다.
+        - control packet이 없다면 deconding되지 못한다!
+- sender에선 RTP packet을 Loss로 부터 보호하기 위해 FEC packet을 생성한다.
+    - WebRTC에선 XOR-based FEC를 사용한다.
+
+**Receive buffers in WebRTC**
+
+- The packet buffer : 크기에 제한이 있으며, frame을 만들기 위해 특정 frame에 속하는 모든 RTP packet을 모은다.
+    - 만약 frame과 관련된 모든 packet이 도착하지 않거나 너무 늦게 도착하면..→ buffer는 packet을 버린다.
+    - frame을 구성하기 위해 모든 packet을 모으는데 필요한 시간을 gathering delay라고 한다.
+        - FEC packet이 처리되는 것에도 delay가 증가될 수도 있다.
+- frame이 완성되면 frame buffer로 push 된다.
+    - frame buffer 또한 크기에 제한이 있으며, 다가올 frame에 충분한 공간이 없다면 old frame을 없앨 수 있다.
+    - missing or purged frame이라면 packet을 drop할 수도 있다.
+    - frame buffer에선 frame들을 모아 decoder로 전송하게 된다.
+        - frame buffer에서 frame이 도착하는 사이의 시간을 interframe delay라고 한다.
+
+**Video QoE and parameters**
+
+- 화상회의의 QoE는 frame rate, freeze duration, E2E latency, media throughput, image quality에 의해 결정된다.
+    - gathering delay와 interframe delay는 비디오 QoE에 큰 영향을 미친다.
+
+**2.2  Existing Multipath Protocols**
+
+- MPTCP : packet을 이용 가능한 경로에 분배한다. 최소 RTT을 가장 선호한다.
+- MPQUIC : user-space multipath extension of QUIC protocol (화상회의보다 latency에 덜 민감한 비디오에서 사용)
+- MPRTP : UDP-based multipath extension to RTP. (latency에 민감한 실시간 media 통신에 사용)
+    - feedback을 제공하지 않으며, packet을 분배하기 위해 이용 가능한 모든 경로를 사용한다.
+
+- multipath transport protocol에선 Head-Of-Line blocking(HOL) issues가 나타난다.
+- schedulers : Musher, minRTT, MPRTP
+- protocol : MPTCP, MPQUIC, MPRTP
+
+**2.3  Multipath Is Not Enough**
+
+![스크린샷 2024-01-20 오후 3.08.09.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.08.09.png)
+
+- WebRTP는 QoE의 만족을 더한 방해없는 화상회의를 제공하는 것에 실패했다. (첫번째 그림)
+- camera streams의 개수가 늘어날 수록 QoE가 악화되었다. (2번째 그림)
+- 화상회의를 위해 디자인되지 않은 scheduler는 낮은 성능을 보였다.
+- converge는 반면에 좋은 성능을 확인할 수 있다. (높은 FPS, 낮은 freeze duration, E2E latency)
+
+![스크린샷 2024-01-20 오후 3.15.41.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.15.41.png)
+
+- 좋은 비디오 QoE의 FPS는 24이다. → WebRTC는 도달하지 못했다.
+- 다른 multipath은 오히려 WebRTC보다 더 높은 freeze duration을 보여준다. (camera stream의 개수가 증가하면 더 증가하게 된다.)
+    - 더 많은 frame drop과 keyframe request는 낮은 FPS와 더 많은 video freezes를 설명
+- packet이 도착하는 순서가 어긋하면  receiver에서 decoding을 방해하는데, dropping을 이끈다.
+- receiver는 QoE와 관련없는 delay와 loss report만을 각 경로에게 보낸다
+- CONVERGE는 video-aware scheduler를 feedback 매커니즘과 사용한다 → 효과적으로 frame drop을 피하고, 더 좋은 FPS를 최소한의 video freeze로 제공한다.
+    - E2E latency 또한 경로 손실을 기반으로 FEC 속도를 결정하는 경로별 접근 방식을 채택하여 효과적으로 완화 가능
+- FEC overhead는 굉장한 processing delay와 E2E latency의 증가로 이어진다. (bandwidth를 최대로 활용하지 못하면서…)
+
+### 3. DESIGN OF CONVERGE

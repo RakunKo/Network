@@ -1,8 +1,6 @@
-# 제목 없음
+# CONVERGE: QoE-driven Multipath Video Conferencing over WebRTC
 
 생성일: 2024년 1월 12일 오후 12:11
-
-## CONVERGE: QoE-driven Multipath Video Conferencing over WebRTC
 
 ### ABSTRACT
 
@@ -29,7 +27,7 @@ bandwidth-intensive applications는 최근 무선 네트워크에선 문제이�
 
 - 더 많은 용량을 가진 차세대 네트워크이 제공되도, 화상회의는 높은 latency와 frame drop을 포함한 아직 낮은 성능을 보여준다.
 
-![스크린샷 2024-01-20 오후 3.06.15.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.06.15.png)
+<img width="702" alt="스크린샷 2024-01-19 오후 4 48 06" src="[https://github.com/RakunKo/Network/assets/145656942/d68fc0c3-83ed-41e2-bbb6-edf1a33b7f38](https://github.com/RakunKo/Network/assets/145656942/d68fc0c3-83ed-41e2-bbb6-edf1a33b7f38)">
 
 - variations in frames per second(FPS) and per-frame end-to-to latency(E2E)는 call안에서 방해의 원인이 되고, 낮은 QoE를 제공하는 원인이 된다.
 - network가 최소 요구 bandwidth를 제공하지 못할때, 다른 network가 보상할 수도 있다.
@@ -76,9 +74,9 @@ Converge를 Real-time Transport Protocol(RTP)m Real-time Transport Control Proto
 **2.1  Overview of WebRTC**
 
 - WebRTC has three components : sender, network controller, receiver
-    
-    ![스크린샷 2024-01-20 오후 3.06.42.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.06.42.png)
-    
+
+<img width="624" alt="스크린샷 2024-01-20 오후 2 24 12" src="[https://github.com/RakunKo/Network/assets/145656942/8781b7a7-082c-4f01-8f98-b9da476ed772](https://github.com/RakunKo/Network/assets/145656942/8781b7a7-082c-4f01-8f98-b9da476ed772)">
+
 - sender : takes the inferred rate from the network controller and encodes video frames captured by the camera at that rate
     - 인코딩된 비디오 frame은 RTP로 패킷화되어 전송되어진다.
 - receiver : receives the RTP packets and utilizes two buffers to generate video frames.
@@ -134,14 +132,14 @@ Converge를 Real-time Transport Protocol(RTP)m Real-time Transport Control Proto
 
 **2.3  Multipath Is Not Enough**
 
-![스크린샷 2024-01-20 오후 3.08.09.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.08.09.png)
+<img width="624" alt="스크린샷 2024-01-20 오후 2 24 12" src="[https://github.com/RakunKo/Network/assets/145656942/8781b7a7-082c-4f01-8f98-b9da476ed772](https://github.com/RakunKo/Network/assets/145656942/8781b7a7-082c-4f01-8f98-b9da476ed772)">
 
 - WebRTP는 QoE의 만족을 더한 방해없는 화상회의를 제공하는 것에 실패했다. (첫번째 그림)
 - camera streams의 개수가 늘어날 수록 QoE가 악화되었다. (2번째 그림)
 - 화상회의를 위해 디자인되지 않은 scheduler는 낮은 성능을 보였다.
 - converge는 반면에 좋은 성능을 확인할 수 있다. (높은 FPS, 낮은 freeze duration, E2E latency)
 
-![스크린샷 2024-01-20 오후 3.15.41.png](%E1%84%8C%E1%85%A6%E1%84%86%E1%85%A9%E1%86%A8%20%E1%84%8B%E1%85%A5%E1%86%B9%E1%84%8B%E1%85%B3%E1%86%B7%201fdb1c4d4e4b40fa9838b4aa99f72dc0/%25E1%2584%2589%25E1%2585%25B3%25E1%2584%258F%25E1%2585%25B3%25E1%2584%2585%25E1%2585%25B5%25E1%2586%25AB%25E1%2584%2589%25E1%2585%25A3%25E1%2586%25BA_2024-01-20_%25E1%2584%258B%25E1%2585%25A9%25E1%2584%2592%25E1%2585%25AE_3.15.41.png)
+<img width="656" alt="스크린샷 2024-01-20 오후 3 31 37" src="[https://github.com/RakunKo/Network/assets/145656942/96b9832a-4e89-4294-ab06-2a0c7b765477](https://github.com/RakunKo/Network/assets/145656942/96b9832a-4e89-4294-ab06-2a0c7b765477)">
 
 - 좋은 비디오 QoE의 FPS는 24이다. → WebRTC는 도달하지 못했다.
 - 다른 multipath은 오히려 WebRTC보다 더 높은 freeze duration을 보여준다. (camera stream의 개수가 증가하면 더 증가하게 된다.)

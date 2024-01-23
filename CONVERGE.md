@@ -344,3 +344,109 @@ Converge를 Real-time Transport Protocol(RTP)m Real-time Transport Control Proto
     - FEC packet이 lost packet을 recover하기 충분하다면, NACK request를 받지 않는다
     - NACK request를 받는다는 것은, FEC packet의 개수를 늘릴 필요가 있다.
         - $\beta = [1+(NACK_i/(P_i-FEC_i)]$
+
+### 5. IMPLEMENTATION
+
+**Connections management**
+
+- multipath connections과 encryption을 지원하기 위해 WebRTC의 3가지 수정이 필요하다
+    - Session Description Protocol(SDP)
+        - 각 peer에게 다중경로 capabilities를 알려주게 수정
+    - Interactive connectivity Establishment(ICE)
+        - 다중 경로를 통한 가능한 네트워크 연결을 포함하게 확장
+    - RTP, RTCP, SRTP
+        - RTP, RTCP를 암호화가 있든 없든 다중경로 사용을 보장하게 확장
+        - RTP, SRTP WebRTC keys를 사용하여 다중경로를 사용할 할 수 있게 보장
+- CONVERGE의 다중경로 관리와 WebRTC의 기존 연결 완화(migration)의 충돌을 막기위해 **wrapper**을 추가하여 연결 상태를 모니터링하고, WebRTC 연결 관리 시스템에 동기화한다.
+
+**Transport layer**
+
+- 각 경로에 대해 특정 delay와 loss 통계를 제공하도록 GCC 알고리즘을 강화했다.
+
+**Media layer**
+
+- transport layer로부터 강화된 통계를 통합하여 확장한다.
+- FEC packet generator와 Media Optimization (MO) module이 video-aware, path-specific loss recovery 매커니즘을 포함하게 수정했다.
+
+**Receiver feedback**
+
+- receiver가 feedback을 위한 path ID 포함하게 수정한다.
+- RTCP message
+    - sender : 예측된 frame rate
+    - receiver : QoE based feedback to the sender
+        
+        
+
+**Multipath WebRTC variants**
+
+- multipath WebRTC variants
+    - M-TPUT : throughtput-based scheduler from Musher into WebRTC
+    - SRTT : use minRTT scheduler (MPTCP, MPQUIC에서 기본 스케줄러)
+    - M-RTP : packet을 loss-based estimated sending rate로 보낸다.
+
+### 6. EVALUATION
+
+- Signal-to-Noies Ratio(PSNR), video stall duration, Quantization parameter(QP), E2E latency
+    - 높은 PSNR과 낮은 QP는 더 좋은 image 품질을 나타낸다
+
+**6.1 Converge in the Wild**
+
+<img width="1045" alt="스크린샷 2024-01-23 오후 3 16 54" src="https://github.com/RakunKo/Network/assets/145656942/2a77e30e-bd84-46a9-8c98-d15ff64fc9bd">
+
+- Converge가 다른 것들에 비해 높은 video throughput과 19~24FPS, 낮은 E2E latency를 보여줌
+- WebRTC를 이용한 것은 낮은 throughput과 비디오 정지를 경험하게 된다.
+
+<img width="477" alt="스크린샷 2024-01-23 오후 3 21 22" src="https://github.com/RakunKo/Network/assets/145656942/d83f3582-8c48-4c9e-9ce6-d2c6f8dbe905">
+
+- converge는 높은 throughput, FPS, 낮은 stalls duation, QP를 보여준다.
+- WebRTC보다 41%, 31%의 FPS 향상을 보여준다.
+- WebRTC보다 33%, 52%의 video stall을 줄여준다.
+
+<img width="496" alt="스크린샷 2024-01-23 오후 3 24 46" src="https://github.com/RakunKo/Network/assets/145656942/0d248cf1-f215-47ca-832f-dd23920c035d">
+
+- converge는 여러 카메라 stream에 대해 더 좋은 QoE를 제공한다.
+    - FEC overhead를 줄이고, FEC 활용을 향상시켜서 달성된다.
+        - FEC overhaed 68%, 51% 향상
+        - IFD와 FCD를 FEC overhead를 줄여 최소화할 수 있다.
+
+**6.2 Converge in Controlled Environment**
+
+**The benefit of QoE feedback**
+
+<img width="1056" alt="스크린샷 2024-01-23 오후 3 29 37" src="https://github.com/RakunKo/Network/assets/145656942/387f0827-c4c1-4281-bee5-ede909968ac5">
+
+- path1이 지속적으로 25Mbps를 유지해도 path2의 영향으로 전체적인 received rate는 최대 encoding rate보다 떨어지게 된다.
+- IFD와 FCD또한 크게 증가했다.
+- receiver는 빠르게 sender에게 feedback을 제공하고, sender는 path2의 packet수를 조절한다.
+    - 중복 패킷은 화상회의에 사용되지 않더라도 네트워크 손실 및 지연을 측정하기 위해 path2에 전송
+- 결과적으로 FCD가 감소한다.
+
+**QoE trade-off analysis of FEC**
+
+<img width="508" alt="스크린샷 2024-01-23 오후 3 40 08" src="https://github.com/RakunKo/Network/assets/145656942/425672fe-22ea-466c-a817-7241d256b818">
+
+- table-based FEC에선 100 media packet마다 loss 비율이 1%라도 40개의 FEC packet을 보내야한다… (40%의 추가 패킷 → but 그중 20%만 실질적으로 사용)
+- path-specific FEC에선 5%정도의 overhead, 5%의 FEC packet이 거의 다 활용
+- converge는 bandwidth 및 처리 요구 사항을 줄이면서 frame rate 및 대기 시간 목표를 충족할 수 있도록 적절한 양의 FEC를 제공
+
+<img width="524" alt="스크린샷 2024-01-23 오후 3 46 24" src="https://github.com/RakunKo/Network/assets/145656942/62391ad6-2dbc-4ce5-b218-f0fd7b6497cf">
+
+- path-specific을 사용하는 converge가 E2E latency도 낮으면서 throughput도 높다.
+
+<img width="504" alt="스크린샷 2024-01-23 오후 3 48 00" src="https://github.com/RakunKo/Network/assets/145656942/6df06f50-093e-4331-b1f5-f73e37fdc549">
+
+- Converge를 사용함으로써 loss rate가 10%일땐, 97% frame drop 개선, 69% freeze duration 감소, 66%의 keyframe request 감소가 일어났다.
+
+**Comparison with existing solutions**
+
+<img width="1049" alt="스크린샷 2024-01-23 오후 3 50 31" src="https://github.com/RakunKo/Network/assets/145656942/adbf943b-45a4-4387-bd5f-58da0e96214c">
+
+- converge는 높은 throughput을 기반으로 높은 FPS와 video stalls를 줄이고, QP로 인한 video quality를 더 좋게 해준다.
+- 또한 FEC overhead는 가장 적은데 효율성은 converge가 가장 높다.
+    - 적은 FEC data를 보내면서 모두 활용한다는 뜻
+- E2E latency는 화상회의에서 가장 중요한 요인
+    - converge는 E2E에서도 가장 낮은 평균을 보여준다.
+
+<img width="461" alt="스크린샷 2024-01-23 오후 3 54 56" src="https://github.com/RakunKo/Network/assets/145656942/a4bad292-1166-4b75-abcb-be6d910c46f7">
+
+- Qp와 PSNR또한 converge에서 가장 낮고 높게 나타났다 → 좋은 image 품질

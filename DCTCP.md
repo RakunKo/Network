@@ -213,3 +213,203 @@ incast는 한 곳에 많은 flow가 갑자기 모였을 때 발생하며, Partit
 - 이는 높은 처리량을 유지하면서 DCTCP가 적은 queue length를 유지할 수 있는 이유이다
 
 **3.2 Benefits**
+**Queue buildup**
+
+- DCTCP sender는 queue의 길이 $K$를 초과하자마자 반응을 시작한다
+    - congestion port의 queuing delay를 줄인다 (long flow의 영향을 줄인다)
+- micro-burst(timeout을 이끌 수 있는 비용이 많이 드는 packet loss를 완화)를 *headroom*으로 더 많은 buffer space가 이용가능하다.
+
+**Buffer pressure**
+
+- congested port의 queue length가 매우 크게 증가하지 않는다 → buffer pressure 해결
+- shared memory switch에서, 소수의 congested port가 다른 port를 통과하는 flow에 악영향을 주는 buffer resources를 고갈시키지 않을 것이다.
+
+**Incast**
+
+- DCTCP는 순간적인 대기열 길이를 기반으로 미리 marking을 시작하기 떄문에, source는 처음 1~2개의 RTT동안 후속 burst의 크기를 조절할 수 있을 만큼 충분한 mark를 받는다
+- 이를 통해 timeout 결과로 이끄는 buffer overflow를 막는다.
+
+**3.3 Analysis**
+
+- N window size가 동기화 되어 있기 때문에 동일한 톱니 모양을 따르며, 시간 t에서의 대기열 크기는
+    
+    $Q(t) = NW(t) - C *RTT$
+    
+- W(t)는 단일 source의 window size
+
+<img width="658" alt="스크린샷 2024-01-28 오후 2 41 52" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/bd4b9158-f6db-486b-a278-dcc1b3e0de80">
+
+- 가장 중요한 진동의 진폭(amplitude of queue oscillations)은 congestion 표시에 대해 온화한 비례 반응으로 인해 DCTCP가 꾸준한 대기열을 얼마나 잘 유지할 수 있는지를 보여준다.
+- 동기화된 sender의 경우 source가 ECN mark를 수신하고 이에 따라 window size를 줄이기 전에 톱니의 각 기간에서 정확히 하나의 RTT에 대해 대기열 크기가 mark threshold K를 초과한다.
+- $\alpha$ 값을 단순히 해당 기간에 마지막 RTT동안 전송된 packet수를 톱니의 전체 기간 동안 전송된 총 packet 수 $T_c$로 나누어 계산이 가능하다.
+    
+    $S(W_1,W_2) = (W_2^2 - W_1^2)/2$
+    
+    $W = (C*RTT+K)/N$
+    
+- sender가 이러한 mark에 반응하는데 시간이 걸리고 window 크기는 하나의 packet만큼 증가하여 W+1에 도달한다.
+    
+    $\alpha = S(W^*,W^*+1)/S((W^*+1)(1-\alpha/2),W^*+1)$
+    
+    $\alpha^2(1-\alpha/4) = (2W^*+1)/(W^* +1)^2$ 는 W>1일때 유효하다.
+    
+    - C, RTT,N, K로 알파값을 구할 때 쓰인다.
+    
+    <img width="661" alt="스크린샷 2024-01-28 오후 3 04 32" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/f69cf8b9-63f3-4ab2-8cd3-42ce89ea4f3c">
+    
+
+<img width="652" alt="스크린샷 2024-01-28 오후 3 07 17" src="https://github.com/UMC5th-PLANME/Android/assets/145656942/e69264db-9eee-4c61-a744-f99db2d8cf52">
+
+- N이 10미만일때 정확하게 예측한다.
+- N이 40일때는 비동기화된 flow가 작은 queue variation으로 이끈다.
+
+- DCTCP에서의 amplitude of queue size(A)는 수식(8)에 의해 $O(\sqrt{C*RTT})$로 나오는데, 이는 TCP의 진폭인 $O(C*RTT)$보다 매우 작은 것을 알 수 있다.
+- 진폭이 적기때문에 매우 작은 marking threshold K를 처리률의 손실 없이 설정할 수 있다.
+    - 진폭이 전은 것은 큰 변동이나 혼잡이 없는 경우
+    - 그러므로 미세한 변화에만 반응하게 설정해도 된다.
+    - 작은 K는 네트워크 혼잡을 빠르게 감지하며, 성능 조절에 용이하다.
+
+**3.4 Guidelines for choosing parameters**
+
+- C는 packet/sec, RTT는 sec, K는 packet
+
+**Marking Threshold**
+
+$Q_{min} = Q_{max} - A = K+N-1/2\sqrt{2N(C*RTT+K}$
+
+K의 하한을 찾기 위해 N에 대해 (12)를 최소화하고 이 최소값이 0보다 크도록 K를 선택한다
+
+$K > (C*RTT)/7$
+
+**Estimation Gain**
+
+추정 이득 g는 지수 이동 평균(1)이 적어도 하나의 혼잡 이벤트를 spans할 수 있도록 충분히 작아야 함.
+
+$(1-g)^{T_c} > 1/2$
+
+최악의 경우 N=1을 사용하여 (9)를 연결하면
+
+$= g < 1.386/\sqrt{2(C*RTT+K)}$
+
+### 4. RESULT
+
+**4.1 DCTCP Performance**
+
+- **Throughput and queue length**
+  
+![스크린샷 2024-01-30 오후 2 31 52](https://github.com/RakunKo/Network/assets/145656942/cd2b9f32-17a0-4c65-b24b-35ef054bca46)
+
+    - K = 20으로 설정하여도 DCTCP는 TCP와 같이 link utilization을 거의 100% 달성
+    - Figure 13에서 확인할 수 있듯이 DCTCP는 TCP보다 queue length가 매우 짧다.
+    - DCTCP는 낮고 안정적인 대기열 길이를 유지한다.
+    
+![스크린샷 2024-01-30 오후 2 32 38](https://github.com/RakunKo/Network/assets/145656942/013d0fdb-0754-49ee-a603-39fcb5bd2860)
+
+- DCTCP의 성능은 K값에 대해서 둔감하다 (K가 5라는 낮은 값에서도…)
+- K값이 추천된 값 65를 넘기는 순간부터 DCTCP는 TCP와 같은 처리량을 가지고, K에 대해 둔감해진다
+
+- **RED**
+  
+![스크린샷 2024-01-30 오후 2 33 08](https://github.com/RakunKo/Network/assets/145656942/96846ca6-5646-40ac-bf62-14fa1477eb58)
+
+    - K값을 기준으로 mark한 DCTCP와 RED 방식으로 mark한 TCP를 비교
+    - Figure 15에선 DCTCP의 대기열 길이가 확실히 낮은 것을 확인할 수 있다.
+        - RED (Adative Queue Management)는 대기열 길이에서 큰 진폭의 원인이 된다.
+        - 이러한 대기열 축적은 microburst를 흡수할 수 있는 공간이 적다는 것을 의미
+    - DCTCP는 매우 작은 대기열 길이에서도 최대 throughput을 달성할 수 있다.
+
+- **Fairness and convergence**
+  
+![스크린샷 2024-01-30 오후 2 33 27](https://github.com/RakunKo/Network/assets/145656942/aab54fee-da3e-4c57-9653-78363562bcce)
+
+    - DCTCP는 빠르게 throughput이 수렴하는 것을 Figure 16(a)에서 확인할 수 있다.
+    - 반면 TCP는 평균은 공평하지만 변화가 많은 것을 확인할 수 있다.
+    - flow의 개수가 많아져도 DCTCP는 빠르게 공유의 공평성과 빠른 수렴을 보여준다.
+
+- **Multi-hop networks**
+  
+![스크린샷 2024-01-30 오후 2 33 43](https://github.com/RakunKo/Network/assets/145656942/bb097938-da62-4c45-a5d1-97212d1f633b)
+
+    - Figure 17에서 Triumph1→Scorpion, Triumph 2→R1이 bottleneck link
+    - S1은 R1에게 보낼때 2개의 병목 link 모두를 만난다.
+    - DCTCP는 S1이 46Mbps, S3가 54Mbps, S2는 475Mbps의 처리량을 보인다.
+    - TCP는 두개의 병목 링크의 대기열 길이 변화가 timeout의 원인이 된다.
+    - DCTCP는 다중 bottlenecks와 변화하는 RTT를 다룰 수 있음을 보여준다.
+
+**4.2 Impairment microbenchmarks**
+
+***4.2.1 Incast***
+
+- Basic Incast
+  
+![스크린샷 2024-01-30 오후 2 34 07](https://github.com/RakunKo/Network/assets/145656942/69052bbf-8e23-44fa-8314-ad21b7a9c5f4)
+
+    - Figure 18 (a)에선 DCTCP가 server의 수가 35를 넘기 전까진 query delay가 더 적다.
+        - 35를 넘어가도 TCP와 같은 수준의 성능으로 수렴
+    - Figure 18(b)에선 적어도 한번 이상 timeout이 발생한 query의 비율을 보여준다.
+        - DCTCP가 확연히 적은 비율을 유지한다.
+        - 서버의 수가 늘어나도 TCP와 같은 수준으로 수렴
+    - DCTCP sender가 ECN mark를 받고 rate를 늦추며 sender 수가 충분히 많아져 각 전송이 2개의 packet이 정적 buffer의 크기를 초과하는 경우에만 timeout이 발생한다.
+
+- **Importance of dynamic buffering**
+  
+![스크린샷 2024-01-30 오후 2 34 21](https://github.com/RakunKo/Network/assets/145656942/9962f149-7800-4f59-975b-a765cce7367e)
+
+    - query delay가 Figure 19(a)에서 DCTCP는 10ms수준을 계속 유지 → incast timeout X
+    - 반면 TCP는 incast timeout을 겪고 있지만 dynamic buffering은 receiver port에 최대 700KB의 buffer를 할당하여 영향을 완화한다.
+
+- **All-to-all incast**
+
+![스크린샷 2024-01-30 오후 2 35 34](https://github.com/RakunKo/Network/assets/145656942/8fc8efe5-2961-476c-b796-d39294131027)
+
+    - 동시에 여러 incast가 발생하면 어떻게 될까?
+    - Figure 20에선 DCTCP의 높은 Query Latency의 비율이 TCP에 비해 적은 것을 확인 가능하다
+        - DCTCP는 dynamic buffering이 memory에 대한 모든 요청을 처리할 수 있을 만큼 buffer space에 대한 요구를 낮게 유지하고 timeout을 겪지 않는다.
+
+DCTCP는 sender가 너무 많아 첫번째 RTT에서 보낸 traffic이 buffer를 초과할 때 까지 incast문제를 timeout 없이 다룰 수 있다.
+
+***4.2.2 Queue buildup***
+
+![스크린샷 2024-01-30 오후 2 35 43](https://github.com/RakunKo/Network/assets/145656942/aa69cae2-dee1-40c5-8d22-cdce7d64cc8a)
+
+- Figure 21에선 median delay가 1ms 미만으로 19ms의 TCP보다 매우 짧다.
+- 전송되는 data의 양이 작기 때문에 완료 시간은 switch의 queue length에 좌우되는 RTT에 의해 영향을 받는다.
+- **DCTCP는 queue lengths를 줄임으로서 작은 flow의 latency를 향상시킨다.**
+
+***4.2.3 Buffer pressure***
+
+![스크린샷 2024-01-30 오후 2 35 59](https://github.com/RakunKo/Network/assets/145656942/a4649f5b-1da3-45a2-b807-7387011d489f)
+
+- Table 2에서는 DCTCP가 background traffic이 있을때나 없을때나 더 빠른 query 완료 시간을 보임
+    - TCP를 사용하면 7%가 timeout을 겪고, DCTCP에서는 0.08%만이 timeout을 겪는다
+- flow를 연결하는 buffer preesure를 줄여 흐름 간의 성능 격리 향상시킨다.
+
+**4.3 Benchmark Traffic**
+
+- query, short-message, background 3가지 traffic을 모두 발생시킨다
+    - query traffic은 각 서버가 도착 시간 간 분포에서 가져온 다음, 다른 모든 서버에 query를 보내고 각 서버가 2KB 응답을 다시 보내도록 함으로써 Partition/Aggregate 구조에 따라 생성된다.
+    - short-message와 background는 도착 시간과 흐름 크기 분포에서 독립적으로 추출하여 rack 간 흐름과 rack 내부 흐름의 비율이 클러스터에서 측정된 것과 같도록 endpoint를 선택한다.
+
+![스크린샷 2024-01-30 오후 2 36 14](https://github.com/RakunKo/Network/assets/145656942/d95d3ab7-5bc4-4efd-9ad6-a4bb4e32987a)
+
+
+- Figure 22에선 short message (100KB~1MB)에서 DCTCP의 완료시간이 더 빠른 것을 알 수 있다.
+- background traffic은 어느 protocol에서도 timeout이 일어나지 않았다.
+    - short message의 낮은 latency는 DCTCP의 queue buildup 개선 때문이다.
+- Figure 23에선 Query Completion Time 측면에서 DCTCP가 TCP보다 빠른 것을 확인할 수 있다.
+    - DCTCP에선 timeout을 겪지 않았다.
+    
+![스크린샷 2024-01-30 오후 2 36 31](https://github.com/RakunKo/Network/assets/145656942/d7340abd-cd6a-4946-8c03-c3d7c3aaa973)
+
+
+
+**Scaled traffic**
+
+![스크린샷 2024-01-30 오후 2 36 46](https://github.com/RakunKo/Network/assets/145656942/88514f0c-0496-40df-aeb1-bbcc9f9aee90)
+
+
+- Figure 24에선 10배의 background, query traffic 상황에서 Completion Time을 나타낸다.
+- DCTCP는 TCP, DeepBuf, RED보다 월등히 좋은 성능을 나타낸다.
+    - DeepBuf는 short-message에서 80ms라는 큰 패널티를 받는다. (incast만 해결)
+    - RED는 queue length의 잦은 변화로 인해 query traffic 성능이 저하된다.
+        - 평균적인 queue length를 기준으로 mark하기 때문에 query incast로 인한 burst에 천천히 반응하게 된다.
